@@ -4,9 +4,10 @@ function usage() {
 echo "USAGE: "
 echo "$CMD init"
 echo "$CMD push|pull repo_name"
+echo "$CMD clean repo_name"
 echo ""
-echo "$CMD init: Create git.private.pem and git.public.pem under ~/keys. Then create leaf directory under this direcotry and git-clone root from Github."
-echo "NOTE: A Github repo called root should be created on github.com beforehand."
+echo "$CMD init: Create git.private.pem and git.public.pem under ~/keys. Then create leaf directory under this direcotry and git-clone  your own repo from Github."
+echo "NOTE: A Github repo called some name should be created on github.com beforehand."
 echo ""
 echo "$CMD push repo_name: Make directory repo_name under leaf/ to an compressed archived file into root/ with the same name."
 echo "Then add this archived file to git and push it to remote."
@@ -26,15 +27,15 @@ function init() {
 
     cd /
     if [ ! -d "$LEAF_DIR" ]; 
-	then
-	mkdir "$LEAF_DIR"
+    then
+    mkdir "$LEAF_DIR"
     fi
 
     cd "$BASE"
     if [ -e "$GITPRIVATE" ] || [ -e "GITPUBLIC" ];
-	then 
-	error "Pem files exits with the same name. Exit."
-	exit 1
+    then 
+    error "Pem files exits with the same name. Exit."
+    exit 1
     fi
     info "Create pem files $GITPRIVATE and $GITPUBLIC under $KEYDIR"
     openssl req -x509 -nodes -days 100000 -newkey rsa:2048 -keyout "$GITPRIVATE" -out "$GITPUBLIC" -subj '/'
@@ -43,13 +44,13 @@ function init() {
 
 function push() {
     if [ ! -d "$LEAFREPO" ];
-	then 
-	error "$LEAFREPO does NOT exist."
-	exit 1
+    then 
+    error "$LEAFREPO does NOT exist."
+    exit 1
     fi
 
     cd /
-    info "Push $aLEAFREPO to Github"
+    info "Push $LEAFREPO to Github"
     info "Remove $REPO under $ROOT_DIR/"
     rm -f "$ROOTREPO"
     info "Encrypt $REPO from $LEAF_DIR to $ROOT_DIR"
@@ -59,8 +60,9 @@ function push() {
     cd "$ROOT_DIR"
     info "Add to Github"
     git add "$REPO"
+    git checkout -- "$REPO"
     git commit -m"Push $REPO"
-    git push -u origin master
+    git push -u origin master --force
     info "Finish push $REPO"
 }    
 
@@ -69,9 +71,9 @@ function pull() {
     cd "$ROOT_DIR"
     git pull --rebase 
     if [ ! -e "$REPO" ];
-	then 
-	error "$REPO does NOT exist."
-	exit 1
+    then 
+    error "$REPO does NOT exist."
+    exit 1
     fi
     cd /
     info "Decrypting $ROOTREPO to $REPO"
@@ -83,14 +85,41 @@ function pull() {
     info "Finish pull $REPO"
 }
 
+function clean() {
+    cd "$ROOT_DIR"
+    git pull --rebase 
+    if [ ! -e "$REPO" ];
+    then 
+    error "$REPO does NOT exist."
+    exit 1
+    fi
+    cd /
+
+    info "Clean History $REPO in Github"
+    cd "$ROOT_DIR"
+    git filter-branch --index-filter 'git rm -r --cached --ignore-unmatch '"$REPO" HEAD
+    git push origin master --force
+    rm -rf .git/refs/original/
+    git reflog expire --expire=now --all
+    git gc --prune=now
+    git gc --aggressive --prune=now
+    git push origin master --force
+
+    push "$REPO"
+    }
+
 BASE="$(cd `dirname $0`; pwd)"
 info "BASE=$BASE"
 CMD="$(basename $0)"
-ACTION="$1"
-ROOT_DIR="$BASE/root"
+
+OWN_REPO="test_1"  # change this as what you want
+ROOT_DIR="$BASE/$OWN_REPO"
 LEAF_DIR="$BASE/leaf"
+
+ACTION="$1"
 REPO="$2"
 TMP="$REPO.ttl1"
+
 if ( [ "$ACTION" == "push" ] || [ "$ACTION" == "pull" ] ) && [ -z "$REPO" ];
 then 
     error "Need a repository name."
@@ -106,13 +135,17 @@ GITPUBLIC="git.public.pem"
 case $ACTION in
 "init")
 init ;;
-"push") 
+
+"push")
 push "$REPO" ;;
 
-"pull") 
+"pull")
 pull "$REPO" ;;
 
-*) 
+"clean")
+clean "$REPO" ;;
+
+*)
 usage ;;
 esac
 
